@@ -1,0 +1,1075 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+  <title>Scanner IA Futuriste</title>
+
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.20.0"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/coco-ssd"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet"></script>
+
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: Arial, Helvetica, sans-serif;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      background: #000;
+      color: white;
+      overflow: hidden;
+    }
+
+    body {
+      min-height: 100dvh;
+    }
+
+    .app {
+      position: relative;
+      width: 100vw;
+      height: 100dvh;
+      background: #000;
+      overflow: hidden;
+    }
+
+    video {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      z-index: 1;
+      opacity: 0.72;
+    }
+
+    video.front {
+      transform: scaleX(-1);
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      z-index: 2;
+      background:
+        radial-gradient(circle at center, rgba(0, 255, 213, 0.08), rgba(0, 0, 0, 0.65)),
+        linear-gradient(to bottom, rgba(0, 0, 0, 0.18), rgba(0, 0, 0, 0.90));
+      pointer-events: none;
+    }
+
+    .interface {
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      padding: 28px 36px 24px;
+      display: flex;
+      flex-direction: column;
+      pointer-events: none;
+    }
+
+    .top-bar {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 18px;
+      pointer-events: auto;
+    }
+
+    .title h1 {
+      font-size: clamp(26px, 3.2vw, 44px);
+      font-weight: 900;
+      letter-spacing: -1px;
+      margin-bottom: 8px;
+    }
+
+    .title p {
+      font-size: clamp(15px, 1.4vw, 20px);
+      font-weight: 700;
+      color: #c5fff7;
+    }
+
+    .actions {
+      display: flex;
+      gap: 12px;
+      justify-content: flex-end;
+      flex-wrap: wrap;
+    }
+
+    button {
+      border: none;
+      outline: none;
+      padding: 13px 20px;
+      border-radius: 999px;
+      background: #00ffd5;
+      color: #00110f;
+      font-weight: 900;
+      cursor: pointer;
+      box-shadow: 0 0 22px rgba(0, 255, 213, 0.45);
+      transition: 0.2s ease;
+    }
+
+    button:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 0 32px rgba(0, 255, 213, 0.7);
+    }
+
+    button.secondary {
+      background: rgba(0, 0, 0, 0.62);
+      color: #00ffd5;
+      border: 1px solid rgba(0, 255, 213, 0.65);
+    }
+
+    .main {
+      flex: 1;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding-top: clamp(28px, 4vh, 52px);
+      pointer-events: none;
+    }
+
+    .scanner-area,
+    .result-card {
+      width: min(72vw, 980px);
+    }
+
+    .status {
+      width: min(72vw, 980px);
+      margin-bottom: 12px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: #00ffd5;
+      font-size: 14px;
+      font-weight: 900;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      padding: 10px 18px;
+      border-radius: 999px;
+      background: rgba(0, 255, 213, 0.13);
+      border: 1px solid rgba(0, 255, 213, 0.62);
+      backdrop-filter: blur(14px);
+      box-shadow: 0 0 16px rgba(0, 255, 213, 0.25);
+    }
+
+    .scanner-area {
+      position: relative;
+      height: clamp(230px, 34vh, 355px);
+      border: 2px solid rgba(0, 255, 213, 0.95);
+      border-radius: 30px;
+      overflow: hidden;
+      background: rgba(0, 255, 213, 0.025);
+      box-shadow:
+        0 0 28px rgba(0, 255, 213, 0.75),
+        inset 0 0 30px rgba(0, 255, 213, 0.16);
+    }
+
+    .scanner-area::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(0, 255, 213, 0.12) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0, 255, 213, 0.12) 1px, transparent 1px);
+      background-size: 42px 42px;
+      opacity: 0.75;
+      z-index: 1;
+    }
+
+    .scanner-line {
+      position: absolute;
+      left: 0;
+      width: 100%;
+      height: 5px;
+      background: #00ffd5;
+      box-shadow: 0 0 30px #00ffd5;
+      animation: scanMove 2.1s infinite linear;
+      z-index: 2;
+    }
+
+    @keyframes scanMove {
+      0% { top: 0; }
+      50% { top: calc(100% - 5px); }
+      100% { top: 0; }
+    }
+
+    .corner {
+      position: absolute;
+      width: 58px;
+      height: 58px;
+      z-index: 3;
+      border-color: #00ffd5;
+    }
+
+    .corner.tl {
+      top: 0;
+      left: 0;
+      border-top: 6px solid #00ffd5;
+      border-left: 6px solid #00ffd5;
+      border-radius: 28px 0 0 0;
+    }
+
+    .corner.tr {
+      top: 0;
+      right: 0;
+      border-top: 6px solid #00ffd5;
+      border-right: 6px solid #00ffd5;
+      border-radius: 0 28px 0 0;
+    }
+
+    .corner.bl {
+      bottom: 0;
+      left: 0;
+      border-bottom: 6px solid #00ffd5;
+      border-left: 6px solid #00ffd5;
+      border-radius: 0 0 0 28px;
+    }
+
+    .corner.br {
+      bottom: 0;
+      right: 0;
+      border-bottom: 6px solid #00ffd5;
+      border-right: 6px solid #00ffd5;
+      border-radius: 0 0 28px 0;
+    }
+
+    .scanner-hint {
+      position: absolute;
+      left: 18px;
+      bottom: 16px;
+      z-index: 4;
+      padding: 8px 12px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.58);
+      border: 1px solid rgba(0, 255, 213, 0.45);
+      color: #c7fff7;
+      font-size: 13px;
+      font-weight: 800;
+      backdrop-filter: blur(12px);
+    }
+
+    .result-card {
+      margin-top: 20px;
+      background: rgba(0, 0, 0, 0.88);
+      border: 1px solid rgba(0, 255, 213, 0.78);
+      border-radius: 26px;
+      padding: 22px 26px;
+      box-shadow: 0 0 30px rgba(0, 255, 213, 0.28);
+      backdrop-filter: blur(18px);
+      pointer-events: auto;
+      max-height: 35vh;
+      overflow: auto;
+    }
+
+    .result-card h2 {
+      color: #00ffd5;
+      font-size: clamp(22px, 2.4vw, 34px);
+      font-weight: 900;
+      margin-bottom: 16px;
+      letter-spacing: -0.5px;
+    }
+
+    .data-line {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 18px;
+      padding: 9px 0;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.14);
+      font-size: clamp(16px, 1.35vw, 20px);
+    }
+
+    .label {
+      color: #c2fff8;
+      font-weight: 900;
+    }
+
+    .value {
+      color: #fff;
+      font-weight: 900;
+      text-align: right;
+    }
+
+    .phrase {
+      margin-top: 14px;
+      font-size: clamp(17px, 1.6vw, 23px);
+      font-weight: 900;
+      line-height: 1.25;
+    }
+
+    .ai-extra {
+      margin-top: 16px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 14px;
+    }
+
+    .panel {
+      border: 1px solid rgba(0, 255, 213, 0.35);
+      background: rgba(0, 255, 213, 0.06);
+      border-radius: 18px;
+      padding: 14px;
+    }
+
+    .panel-title {
+      color: #00ffd5;
+      font-size: 14px;
+      font-weight: 900;
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+    }
+
+    .similarity-list {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      font-size: 14px;
+      color: #eafffc;
+      font-weight: 700;
+    }
+
+    .chips {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .chip {
+      padding: 8px 11px;
+      border-radius: 999px;
+      border: 1px solid rgba(0, 255, 213, 0.45);
+      background: rgba(0, 255, 213, 0.08);
+      color: #bffff7;
+      font-size: 12px;
+      font-weight: 900;
+    }
+
+    .learn-box {
+      margin-top: 14px;
+      display: flex;
+      gap: 10px;
+    }
+
+    .learn-box input {
+      flex: 1;
+      min-width: 0;
+      border: 1px solid rgba(0, 255, 213, 0.45);
+      outline: none;
+      border-radius: 999px;
+      padding: 11px 14px;
+      background: rgba(255, 255, 255, 0.08);
+      color: white;
+      font-weight: 800;
+    }
+
+    .learn-box input::placeholder {
+      color: rgba(255, 255, 255, 0.55);
+    }
+
+    .learn-box button {
+      padding: 11px 16px;
+      font-size: 12px;
+    }
+
+    .loading {
+      position: absolute;
+      inset: 0;
+      z-index: 50;
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      flex-direction: column;
+      gap: 18px;
+      color: #fff;
+    }
+
+    .loader {
+      width: 58px;
+      height: 58px;
+      border-radius: 50%;
+      border: 5px solid rgba(0, 255, 213, 0.18);
+      border-top: 5px solid #00ffd5;
+      animation: rotate 1s infinite linear;
+    }
+
+    @keyframes rotate {
+      to { transform: rotate(360deg); }
+    }
+
+    @media (max-width: 760px) {
+      .interface {
+        padding: 18px 14px 14px;
+      }
+
+      .top-bar {
+        flex-direction: column;
+        gap: 12px;
+      }
+
+      .actions {
+        width: 100%;
+        justify-content: space-between;
+      }
+
+      button {
+        padding: 11px 14px;
+        font-size: 12px;
+      }
+
+      .main {
+        padding-top: 18px;
+      }
+
+      .scanner-area,
+      .result-card,
+      .status {
+        width: 92vw;
+      }
+
+      .scanner-area {
+        height: 30vh;
+        min-height: 210px;
+        max-height: 280px;
+        border-radius: 22px;
+      }
+
+      .corner {
+        width: 46px;
+        height: 46px;
+      }
+
+      .result-card {
+        margin-top: 16px;
+        padding: 17px;
+        border-radius: 22px;
+        max-height: 39vh;
+      }
+
+      .result-card h2 {
+        margin-bottom: 12px;
+      }
+
+      .data-line {
+        padding: 8px 0;
+        font-size: 15px;
+      }
+
+      .phrase {
+        font-size: 16px;
+      }
+
+      .ai-extra {
+        grid-template-columns: 1fr;
+      }
+
+      .learn-box {
+        flex-direction: column;
+      }
+    }
+
+    @media (max-height: 730px) and (min-width: 761px) {
+      .interface {
+        padding-top: 18px;
+        padding-bottom: 18px;
+      }
+
+      .main {
+        padding-top: 16px;
+      }
+
+      .scanner-area {
+        height: 29vh;
+      }
+
+      .result-card {
+        max-height: 34vh;
+        padding: 18px 24px;
+      }
+
+      .result-card h2 {
+        margin-bottom: 10px;
+      }
+
+      .data-line {
+        padding: 7px 0;
+      }
+
+      .ai-extra {
+        margin-top: 12px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <video id="camera" autoplay playsinline muted></video>
+    <div class="overlay"></div>
+
+    <div class="interface">
+      <div class="top-bar">
+        <div class="title">
+          <h1>6. Scanner d’objet futuriste</h1>
+          <p>Place l’objet dans le cadre lumineux.</p>
+        </div>
+
+        <div class="actions">
+          <button onclick="manualScan()">Scanner</button>
+          <button class="secondary" onclick="switchCamera()">Changer caméra</button>
+        </div>
+      </div>
+
+      <div class="main">
+        <div class="status">
+          <span class="status-pill" id="status">Initialisation...</span>
+        </div>
+
+        <div class="scanner-area" id="scannerArea">
+          <div class="scanner-line"></div>
+          <div class="corner tl"></div>
+          <div class="corner tr"></div>
+          <div class="corner bl"></div>
+          <div class="corner br"></div>
+          <div class="scanner-hint">Zone de scan active</div>
+        </div>
+
+        <div class="result-card">
+          <h2>L’IA affiche :</h2>
+
+          <div class="data-line">
+            <span class="label">Objet</span>
+            <span class="value" id="objectName">Analyse...</span>
+          </div>
+
+          <div class="data-line">
+            <span class="label">Confiance</span>
+            <span class="value" id="confidence">--%</span>
+          </div>
+
+          <div class="data-line">
+            <span class="label">Matière</span>
+            <span class="value" id="material">Analyse...</span>
+          </div>
+
+          <div class="data-line">
+            <span class="label">Recyclable</span>
+            <span class="value" id="recyclable">Analyse...</span>
+          </div>
+
+          <p class="phrase" id="phrase">En attente de détection...</p>
+
+          <div class="ai-extra">
+            <div class="panel">
+              <div class="panel-title">Ressemblance IA</div>
+              <div class="similarity-list" id="similarityList">
+                Analyse de ressemblance en attente...
+              </div>
+            </div>
+
+            <div class="panel">
+              <div class="panel-title">Système</div>
+              <div class="chips">
+                <span class="chip" id="cameraMode">Caméra : frontale</span>
+                <span class="chip" id="scanMode">Mode : auto</span>
+                <span class="chip" id="detectedCount">Détections : 0</span>
+                <span class="chip" id="memoryCount">Mémoire : 0</span>
+              </div>
+
+              <div class="learn-box">
+                <input id="learnInput" type="text" placeholder="Corriger le nom de l’objet..." />
+                <button onclick="learnCorrection()">Apprendre</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="loading" id="loading">
+      <div class="loader"></div>
+      <p>Initialisation du scanner IA...</p>
+    </div>
+  </div>
+
+  <script>
+    const video = document.getElementById("camera");
+    const scannerArea = document.getElementById("scannerArea");
+
+    const statusText = document.getElementById("status");
+    const objectName = document.getElementById("objectName");
+    const confidence = document.getElementById("confidence");
+    const material = document.getElementById("material");
+    const recyclable = document.getElementById("recyclable");
+    const phrase = document.getElementById("phrase");
+    const loading = document.getElementById("loading");
+
+    const cameraMode = document.getElementById("cameraMode");
+    const detectedCount = document.getElementById("detectedCount");
+    const memoryCount = document.getElementById("memoryCount");
+    const similarityList = document.getElementById("similarityList");
+    const learnInput = document.getElementById("learnInput");
+
+    let detectorModel = null;
+    let similarityModel = null;
+    let currentStream = null;
+    let currentFacingMode = "user";
+    let isScanning = false;
+    let lastDetectedKey = null;
+
+    const memoryKey = "scanner_ai_memory_v1";
+    let localMemory = JSON.parse(localStorage.getItem(memoryKey) || "{}");
+
+    const translations = {
+      "person": "Personne",
+      "bottle": "Bouteille d’eau",
+      "cup": "Gobelet",
+      "cell phone": "Téléphone",
+      "laptop": "Ordinateur portable",
+      "keyboard": "Clavier",
+      "mouse": "Souris",
+      "book": "Livre",
+      "chair": "Chaise",
+      "tv": "Télévision",
+      "remote": "Télécommande",
+      "backpack": "Sac à dos",
+      "scissors": "Ciseaux",
+      "toothbrush": "Brosse à dents",
+      "clock": "Horloge",
+      "apple": "Pomme",
+      "banana": "Banane",
+      "orange": "Orange",
+      "handbag": "Sac",
+      "sports ball": "Ballon",
+      "tie": "Cravate",
+      "umbrella": "Parapluie",
+      "vase": "Vase",
+      "fork": "Fourchette",
+      "knife": "Couteau",
+      "spoon": "Cuillère",
+      "bowl": "Bol",
+      "car": "Voiture",
+      "truck": "Camion",
+      "bus": "Bus",
+      "bicycle": "Vélo",
+      "motorcycle": "Moto",
+      "dog": "Chien",
+      "cat": "Chat",
+      "bird": "Oiseau",
+      "dining table": "Table",
+      "couch": "Canapé",
+      "bed": "Lit",
+      "suitcase": "Valise"
+    };
+
+    const objectInfo = {
+      "person": {
+        material: "Inconnu",
+        recyclable: "À vérifier",
+        phrase: "Personne détectée. Place plutôt un objet dans le cadre."
+      },
+      "bottle": {
+        material: "Plastique / verre",
+        recyclable: "Oui",
+        phrase: "Objet détecté : bouteille. Analyse environnementale possible."
+      },
+      "cup": {
+        material: "Carton / plastique",
+        recyclable: "Oui, selon la matière",
+        phrase: "Récipient détecté avec succès."
+      },
+      "cell phone": {
+        material: "Métal / verre / plastique",
+        recyclable: "Oui, en centre spécialisé",
+        phrase: "Appareil technologique détecté."
+      },
+      "laptop": {
+        material: "Métal / plastique",
+        recyclable: "Oui, en centre spécialisé",
+        phrase: "Ordinateur détecté. Niveau technologie élevé."
+      },
+      "keyboard": {
+        material: "Plastique / électronique",
+        recyclable: "Oui, en centre spécialisé",
+        phrase: "Périphérique informatique détecté."
+      },
+      "mouse": {
+        material: "Plastique / électronique",
+        recyclable: "Oui, en centre spécialisé",
+        phrase: "Accessoire numérique détecté."
+      },
+      "book": {
+        material: "Papier",
+        recyclable: "Oui",
+        phrase: "Support d’apprentissage détecté."
+      },
+      "chair": {
+        material: "Bois / métal / plastique",
+        recyclable: "Oui, selon la matière",
+        phrase: "Mobilier détecté."
+      },
+      "tv": {
+        material: "Verre / métal / plastique",
+        recyclable: "Oui, en centre spécialisé",
+        phrase: "Écran détecté."
+      },
+      "remote": {
+        material: "Plastique / électronique",
+        recyclable: "Oui, en centre spécialisé",
+        phrase: "Télécommande détectée."
+      },
+      "backpack": {
+        material: "Tissu / polyester",
+        recyclable: "Difficile",
+        phrase: "Sac détecté."
+      },
+      "apple": {
+        material: "Organique",
+        recyclable: "Compostable",
+        phrase: "Fruit détecté."
+      },
+      "banana": {
+        material: "Organique",
+        recyclable: "Compostable",
+        phrase: "Fruit détecté."
+      },
+      "orange": {
+        material: "Organique",
+        recyclable: "Compostable",
+        phrase: "Fruit détecté."
+      },
+      "handbag": {
+        material: "Tissu / cuir / plastique",
+        recyclable: "Selon la matière",
+        phrase: "Sac détecté."
+      },
+      "sports ball": {
+        material: "Caoutchouc / cuir synthétique",
+        recyclable: "Difficile",
+        phrase: "Ballon détecté."
+      },
+      "fork": {
+        material: "Métal / plastique",
+        recyclable: "Oui, selon la matière",
+        phrase: "Ustensile détecté."
+      },
+      "knife": {
+        material: "Métal / plastique",
+        recyclable: "Oui, selon la matière",
+        phrase: "Ustensile détecté."
+      },
+      "spoon": {
+        material: "Métal / plastique",
+        recyclable: "Oui, selon la matière",
+        phrase: "Ustensile détecté."
+      },
+      "bowl": {
+        material: "Verre / plastique / céramique",
+        recyclable: "Selon la matière",
+        phrase: "Bol détecté."
+      },
+      "car": {
+        material: "Métal / plastique / verre",
+        recyclable: "Oui, en centre spécialisé",
+        phrase: "Véhicule détecté."
+      }
+    };
+
+    function updateMemoryCount() {
+      memoryCount.textContent = "Mémoire : " + Object.keys(localMemory).length;
+    }
+
+    function normalizeLabel(label) {
+      return String(label || "")
+        .toLowerCase()
+        .replace(/,/g, " /")
+        .trim();
+    }
+
+    function getDisplayName(key) {
+      const normalized = normalizeLabel(key);
+
+      if (localMemory[normalized]) {
+        return localMemory[normalized];
+      }
+
+      if (translations[normalized]) {
+        return translations[normalized];
+      }
+
+      return key;
+    }
+
+    function getObjectDetails(key) {
+      const normalized = normalizeLabel(key);
+
+      if (objectInfo[normalized]) {
+        return objectInfo[normalized];
+      }
+
+      return {
+        material: "Inconnu",
+        recyclable: "À vérifier",
+        phrase: "Objet détecté par le scanner IA. Vérifie la ressemblance proposée."
+      };
+    }
+
+    async function startCamera() {
+      try {
+        if (currentStream) {
+          currentStream.getTracks().forEach(track => track.stop());
+        }
+
+        const constraints = {
+          video: {
+            facingMode: { ideal: currentFacingMode },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        };
+
+        currentStream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = currentStream;
+
+        if (currentFacingMode === "user") {
+          video.classList.add("front");
+          cameraMode.textContent = "Caméra : frontale";
+          statusText.textContent = "Caméra frontale activée.";
+        } else {
+          video.classList.remove("front");
+          cameraMode.textContent = "Caméra : arrière";
+          statusText.textContent = "Caméra arrière activée.";
+        }
+      } catch (error) {
+        console.error(error);
+        statusText.textContent = "Erreur caméra. Autorise l’accès.";
+        loading.style.display = "none";
+      }
+    }
+
+    async function switchCamera() {
+      currentFacingMode = currentFacingMode === "user" ? "environment" : "user";
+      statusText.textContent = "Changement de caméra...";
+      await startCamera();
+    }
+
+    async function loadAI() {
+      try {
+        statusText.textContent = "Chargement TensorFlow...";
+        await tf.ready();
+
+        try {
+          await tf.setBackend("webgl");
+        } catch (error) {
+          console.warn("WebGL non disponible, backend par défaut utilisé.");
+        }
+
+        statusText.textContent = "Chargement détection d’objets...";
+        detectorModel = await cocoSsd.load();
+
+        statusText.textContent = "Chargement ressemblance IA...";
+        similarityModel = await mobilenet.load();
+
+        statusText.textContent = "Scanner prêt.";
+        loading.style.display = "none";
+      } catch (error) {
+        console.error(error);
+        statusText.textContent = "Erreur de chargement IA.";
+        loading.style.display = "none";
+      }
+    }
+
+    function createScannerCrop() {
+      if (!video.videoWidth || !video.videoHeight) return null;
+
+      const videoRect = video.getBoundingClientRect();
+      const scanRect = scannerArea.getBoundingClientRect();
+
+      const videoAspect = video.videoWidth / video.videoHeight;
+      const elementAspect = videoRect.width / videoRect.height;
+
+      let displayWidth;
+      let displayHeight;
+      let offsetX;
+      let offsetY;
+
+      if (videoAspect > elementAspect) {
+        displayHeight = videoRect.height;
+        displayWidth = displayHeight * videoAspect;
+        offsetX = (videoRect.width - displayWidth) / 2;
+        offsetY = 0;
+      } else {
+        displayWidth = videoRect.width;
+        displayHeight = displayWidth / videoAspect;
+        offsetX = 0;
+        offsetY = (videoRect.height - displayHeight) / 2;
+      }
+
+      let sx = ((scanRect.left - videoRect.left - offsetX) / displayWidth) * video.videoWidth;
+      let sy = ((scanRect.top - videoRect.top - offsetY) / displayHeight) * video.videoHeight;
+      let sw = (scanRect.width / displayWidth) * video.videoWidth;
+      let sh = (scanRect.height / displayHeight) * video.videoHeight;
+
+      sx = Math.max(0, Math.min(video.videoWidth - 1, sx));
+      sy = Math.max(0, Math.min(video.videoHeight - 1, sy));
+      sw = Math.max(1, Math.min(video.videoWidth - sx, sw));
+      sh = Math.max(1, Math.min(video.videoHeight - sy, sh));
+
+      const cropCanvas = document.createElement("canvas");
+      cropCanvas.width = 640;
+      cropCanvas.height = Math.round(640 * (sh / sw));
+
+      const cropCtx = cropCanvas.getContext("2d");
+      cropCtx.drawImage(video, sx, sy, sw, sh, 0, 0, cropCanvas.width, cropCanvas.height);
+
+      return cropCanvas;
+    }
+
+    function chooseBestPrediction(predictions) {
+      if (!predictions || predictions.length === 0) return null;
+
+      const confident = predictions.filter(item => item.score >= 0.38);
+      const nonPerson = confident.filter(item => item.class !== "person");
+
+      if (nonPerson.length > 0) {
+        return nonPerson.sort((a, b) => b.score - a.score)[0];
+      }
+
+      if (confident.length > 0) {
+        return confident.sort((a, b) => b.score - a.score)[0];
+      }
+
+      return predictions.sort((a, b) => b.score - a.score)[0];
+    }
+
+    function renderSimilarity(classifications) {
+      if (!classifications || classifications.length === 0) {
+        similarityList.innerHTML = "Aucune ressemblance trouvée.";
+        return;
+      }
+
+      similarityList.innerHTML = classifications
+        .slice(0, 4)
+        .map(item => {
+          const percent = Math.round(item.probability * 100);
+          const name = item.className;
+          return `<div>• ${name} — ${percent}%</div>`;
+        })
+        .join("");
+    }
+
+    async function scanObject() {
+      if (!detectorModel || !similarityModel || isScanning || video.readyState < 2) return;
+
+      isScanning = true;
+      statusText.textContent = "Analyse en cours...";
+
+      try {
+        const crop = createScannerCrop();
+
+        if (!crop) {
+          statusText.textContent = "Caméra pas encore prête.";
+          isScanning = false;
+          return;
+        }
+
+        const predictions = await detectorModel.detect(crop);
+        const classifications = await similarityModel.classify(crop, 5);
+
+        detectedCount.textContent = "Détections : " + predictions.length;
+        renderSimilarity(classifications);
+
+        const bestObject = chooseBestPrediction(predictions);
+        const bestSimilarity = classifications && classifications.length > 0 ? classifications[0] : null;
+
+        let detectedKey = null;
+        let score = 0;
+        let source = "";
+
+        if (bestObject && bestObject.score >= 0.38) {
+          detectedKey = bestObject.class;
+          score = Math.round(bestObject.score * 100);
+          source = "Détection objet";
+        } else if (bestSimilarity) {
+          detectedKey = bestSimilarity.className;
+          score = Math.round(bestSimilarity.probability * 100);
+          source = "Ressemblance IA";
+        }
+
+        if (!detectedKey) {
+          objectName.textContent = "Aucun objet détecté";
+          confidence.textContent = "--%";
+          material.textContent = "Inconnu";
+          recyclable.textContent = "Inconnu";
+          phrase.textContent = "Rapproche l’objet et place-le bien dans le cadre lumineux.";
+          statusText.textContent = "Aucun objet trouvé.";
+          isScanning = false;
+          return;
+        }
+
+        lastDetectedKey = normalizeLabel(detectedKey);
+
+        const displayName = getDisplayName(detectedKey);
+        const details = getObjectDetails(detectedKey);
+
+        objectName.textContent = displayName;
+        confidence.textContent = score + "%";
+        material.textContent = details.material;
+        recyclable.textContent = details.recyclable;
+        phrase.textContent = details.phrase + " Source : " + source + ".";
+
+        statusText.textContent = "Objet analysé.";
+      } catch (error) {
+        console.error(error);
+        statusText.textContent = "Erreur pendant l’analyse.";
+      }
+
+      isScanning = false;
+    }
+
+    function manualScan() {
+      scanObject();
+    }
+
+    function learnCorrection() {
+      const correction = learnInput.value.trim();
+
+      if (!correction || !lastDetectedKey) {
+        statusText.textContent = "Aucune correction à enregistrer.";
+        return;
+      }
+
+      localMemory[lastDetectedKey] = correction;
+      localStorage.setItem(memoryKey, JSON.stringify(localMemory));
+      updateMemoryCount();
+
+      objectName.textContent = correction;
+      learnInput.value = "";
+      statusText.textContent = "Correction enregistrée dans la mémoire locale.";
+    }
+
+    async function init() {
+      updateMemoryCount();
+      await startCamera();
+      await loadAI();
+
+      setInterval(() => {
+        scanObject();
+      }, 2300);
+    }
+
+    init();
+  </script>
+</body>
+</html>
